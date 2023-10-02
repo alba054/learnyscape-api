@@ -1,33 +1,46 @@
-import { NextFunction, Request, RequestHandler, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { BadRequestError } from "../../exceptions/httpError/BadRequestError";
 import { InternalServerError } from "../../exceptions/httpError/InternalServerError";
 import { NotFoundError } from "../../exceptions/httpError/NotFoundError";
 import { AuthenticationService } from "../../services/facade/AuthenticationService";
 import { UserService } from "../../services/UserService";
-import { constants, createResponse } from "../../utils";
+import {
+  ERRORCODE,
+  RESPONSE_MESSAGE,
+  constants,
+  createResponse,
+  throwResultError,
+  throwValidationError,
+} from "../../utils";
 import { IUserProfileDTO } from "../../utils/dto/UserDTO";
 import { UploadFileHelper } from "../../utils/helper/UploadFileHelper";
 import { ITokenPayload } from "../../utils/interfaces/TokenPayload";
 import {
   IPostUserPayload,
+  IPutClassUser,
   IPutUserMasterData,
   IPutUserProfile,
 } from "../../utils/interfaces/User";
 import {
+  UserClassPayloadSchema,
   UserPayloadSchema,
   UserProfileMasterPayloadSchema,
   UserProfilePayloadSchema,
 } from "../../validator/users/UserSchema";
 import { Validator } from "../../validator/Validator";
+import { StudentWaitingListService } from "../../services/StudentWaitingListService";
+import { IListStudentWaitingListDTO } from "../../utils/dto/StudentWaitingListDTO";
 
 export class UserHandler {
   private userService: UserService;
   private validator: Validator;
   private authenticationService: AuthenticationService;
+  private studentWaitingListService: StudentWaitingListService;
 
   constructor() {
     this.userService = new UserService();
     this.authenticationService = new AuthenticationService();
+    this.studentWaitingListService = new StudentWaitingListService();
     this.validator = new Validator();
 
     this.getUserProfile = this.getUserProfile.bind(this);
@@ -41,6 +54,76 @@ export class UserHandler {
     this.getAllUsers = this.getAllUsers.bind(this);
     this.deleteUserById = this.deleteUserById.bind(this);
     this.getUserById = this.getUserById.bind(this);
+    this.putRegistrationStudentToClass =
+      this.putRegistrationStudentToClass.bind(this);
+    this.getLecturerStudentsWaitingLists =
+      this.getLecturerStudentsWaitingLists.bind(this);
+  }
+
+  async getLecturerStudentsWaitingLists(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    const { id } = req.params;
+    const { status } = req.query;
+    const tokenPayload: ITokenPayload = res.locals.user;
+
+    const result =
+      await this.studentWaitingListService.getStudentWaitingListOfLecturer(
+        id,
+        tokenPayload.userId,
+        String(status ?? "")
+      );
+
+    return res.status(200).json(
+      createResponse(
+        RESPONSE_MESSAGE.SUCCESS,
+        result.map((r) => {
+          return {
+            fullname: r.user.fullname,
+            studentId: r.user.username,
+            userId: r.userId,
+            status: r.status,
+            id: r.id,
+          } as IListStudentWaitingListDTO;
+        })
+      )
+    );
+  }
+
+  async putRegistrationStudentToClass(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    const tokenPayload: ITokenPayload = res.locals.user;
+    const payload: IPutClassUser = req.body;
+
+    try {
+      const validationResult = this.validator.validate(
+        UserClassPayloadSchema,
+        payload
+      );
+      throwValidationError(validationResult);
+      const testError = await this.userService.addStudentClassWaitingList(
+        tokenPayload.userId,
+        payload
+      );
+
+      throwResultError(testError);
+
+      return res
+        .status(200)
+        .json(
+          createResponse(
+            RESPONSE_MESSAGE.SUCCESS,
+            "successfully update user profile"
+          )
+        );
+    } catch (error) {
+      return next(error);
+    }
   }
 
   async getUserById(req: Request, res: Response, next: NextFunction) {
@@ -59,7 +142,7 @@ export class UserHandler {
     }
 
     return res.status(200).json(
-      createResponse(constants.SUCCESS_RESPONSE_MESSAGE, {
+      createResponse(RESPONSE_MESSAGE.SUCCESS, {
         fullname: user.fullname,
         role: user.role,
         userId: user.id,
@@ -79,34 +162,20 @@ export class UserHandler {
         payload
       );
 
-      if (validationResult && "error" in validationResult) {
-        throw new BadRequestError(
-          validationResult.errorCode,
-          validationResult.message
-        );
-      }
+      throwValidationError(validationResult);
 
       const testError = await this.userService.updateUserProfileMaster(
         id,
         payload
       );
 
-      if (testError && "error" in testError) {
-        switch (testError.error) {
-          case 400:
-            throw new BadRequestError(testError.errorCode, testError.message);
-          case 404:
-            throw new NotFoundError(testError.errorCode, testError.message);
-          default:
-            throw new InternalServerError(testError.errorCode);
-        }
-      }
+      throwResultError(testError);
 
       return res
         .status(200)
         .json(
           createResponse(
-            constants.SUCCESS_RESPONSE_MESSAGE,
+            RESPONSE_MESSAGE.SUCCESS,
             "successfully update user profile"
           )
         );
@@ -121,22 +190,11 @@ export class UserHandler {
     try {
       const result = await this.userService.deleteUserById(id);
 
-      if (result && "error" in result) {
-        switch (result.error) {
-          case 400:
-            throw new BadRequestError(result.errorCode, result.message);
-          case 404:
-            throw new NotFoundError(result.errorCode, result.message);
-          default:
-            throw new InternalServerError(result.errorCode);
-        }
-      }
+      throwResultError(result);
 
       return res
         .status(200)
-        .json(
-          createResponse(constants.SUCCESS_RESPONSE_MESSAGE, "deleted user")
-        );
+        .json(createResponse(RESPONSE_MESSAGE.SUCCESS, "deleted user"));
     } catch (error) {
       return next(error);
     }
@@ -147,14 +205,13 @@ export class UserHandler {
 
     const users = await this.userService.getAllUsers(
       parseInt(String(page ?? "1")),
-      constants.HISTORY_ELEMENTS_PER_PAGE,
-      String(search),
-      String(role)
+      String(search ?? ""),
+      String(role ?? "")
     );
 
     return res.status(200).json(
       createResponse(
-        constants.SUCCESS_RESPONSE_MESSAGE,
+        RESPONSE_MESSAGE.SUCCESS,
         users.map((u) => {
           return {
             fullname: u.fullname,
@@ -179,10 +236,7 @@ export class UserHandler {
       return res
         .status(200)
         .json(
-          createResponse(
-            constants.SUCCESS_RESPONSE_MESSAGE,
-            "deleted user profile pic"
-          )
+          createResponse(RESPONSE_MESSAGE.SUCCESS, "deleted user profile pic")
         );
     } catch (error) {
       return next(error);
@@ -197,6 +251,8 @@ export class UserHandler {
       );
 
       if (typeof fileToSend === "string") {
+        console.log(`${constants.ABS_PATH}/${fileToSend}`);
+
         return res.sendFile(`${constants.ABS_PATH}/${fileToSend}`);
       }
       switch (fileToSend?.error) {
@@ -218,7 +274,7 @@ export class UserHandler {
     try {
       if (!req.file?.buffer) {
         throw new BadRequestError(
-          constants.VALIDATOR_ERROR,
+          ERRORCODE.VALIDATOR_ERROR,
           "upload file with fieldname pic"
         );
       }
@@ -235,7 +291,7 @@ export class UserHandler {
 
       return res
         .status(201)
-        .json(createResponse(constants.SUCCESS_RESPONSE_MESSAGE, savedFile));
+        .json(createResponse(RESPONSE_MESSAGE.SUCCESS, savedFile));
     } catch (error) {
       return next(error);
     }
@@ -249,7 +305,7 @@ export class UserHandler {
 
       return res
         .status(200)
-        .json(createResponse(constants.SUCCESS_RESPONSE_MESSAGE, token));
+        .json(createResponse(RESPONSE_MESSAGE.SUCCESS, token));
     } catch (error) {
       return next(error);
     }
@@ -263,22 +319,11 @@ export class UserHandler {
         tokenPayload.username
       );
 
-      if (result && "error" in result) {
-        switch (result.error) {
-          case 400:
-            throw new BadRequestError(result.errorCode, result.message);
-          case 404:
-            throw new NotFoundError(result.errorCode, result.message);
-          default:
-            throw new InternalServerError(result.errorCode);
-        }
-      }
+      throwResultError(result);
 
       return res
         .status(200)
-        .json(
-          createResponse(constants.SUCCESS_RESPONSE_MESSAGE, "deleted user")
-        );
+        .json(createResponse(RESPONSE_MESSAGE.SUCCESS, "deleted user"));
     } catch (error) {
       return next(error);
     }
@@ -292,32 +337,15 @@ export class UserHandler {
         UserPayloadSchema,
         payload
       );
-
-      if (validationResult && "error" in validationResult) {
-        throw new BadRequestError(
-          validationResult.errorCode,
-          validationResult.message
-        );
-      }
-
+      throwValidationError(validationResult);
       const testError = await this.userService.addNewUser(payload);
-
-      if (testError && "error" in testError) {
-        switch (testError.error) {
-          case 400:
-            throw new BadRequestError(testError.errorCode, testError.message);
-          case 404:
-            throw new NotFoundError(testError.errorCode, testError.message);
-          default:
-            throw new InternalServerError(testError.errorCode);
-        }
-      }
+      throwResultError(testError);
 
       return res
         .status(201)
         .json(
           createResponse(
-            constants.SUCCESS_RESPONSE_MESSAGE,
+            RESPONSE_MESSAGE.SUCCESS,
             "successfully register a new user"
           )
         );
@@ -336,34 +364,19 @@ export class UserHandler {
         payload
       );
 
-      if (validationResult && "error" in validationResult) {
-        throw new BadRequestError(
-          validationResult.errorCode,
-          validationResult.message
-        );
-      }
+      throwValidationError(validationResult);
 
       const testError = await this.userService.updateUserProfile(
         tokenPayload.username,
         payload
       );
-
-      if (testError && "error" in testError) {
-        switch (testError.error) {
-          case 400:
-            throw new BadRequestError(testError.errorCode, testError.message);
-          case 404:
-            throw new NotFoundError(testError.errorCode, testError.message);
-          default:
-            throw new InternalServerError(testError.errorCode);
-        }
-      }
+      throwResultError(testError);
 
       return res
         .status(200)
         .json(
           createResponse(
-            constants.SUCCESS_RESPONSE_MESSAGE,
+            RESPONSE_MESSAGE.SUCCESS,
             "successfully update user profile"
           )
         );
@@ -388,7 +401,7 @@ export class UserHandler {
     }
 
     return res.status(200).json(
-      createResponse(constants.SUCCESS_RESPONSE_MESSAGE, {
+      createResponse(RESPONSE_MESSAGE.SUCCESS, {
         fullname: user.fullname,
         role: user.role,
         userId: user.id,
