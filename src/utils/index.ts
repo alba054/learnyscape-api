@@ -36,6 +36,13 @@ export enum DAY {
   SATURDAY = "SATURDAY",
 }
 
+export enum HISTORYTYPE {
+  ANNOUNCEMENT = "ANNOUNCEMENT",
+  QUIZ = "QUIZ",
+  TASK = "TASK",
+  REFERENCE = "REFERENCE",
+}
+
 export const DAYS = [
   "SUNDAY",
   "MONDAY",
@@ -73,8 +80,11 @@ export const constants = {
   INVALID_SIGNATURE: "secret key is not valid",
   ABS_PATH: process.env.ABS_PATH,
   PROFILE_PIC_PATH: "storage/user-pic/",
+  REFERENCE_PATH: "storage/references/",
   PASSWORD_SALT: 10,
   PAGINATION_OFFSET: 25,
+  OFFSET_TIME: 8, // * GMT+8
+  ATTACHMENT_REFERENCE_URI: "/references/attachments/",
 };
 
 export const createErrorObject = (
@@ -149,4 +159,15 @@ export const catchPrismaError = (error: any) => {
   } else {
     return createErrorObject(500, String(error));
   }
+};
+
+/**
+ *
+ * @param epochMiliSecond epoch in milisecond
+ * @param offset difference from utc time, ex. gmt+8 -> 8, gmt-8 -> -8
+ * @returns date object after calculating based on offset
+ */
+export const convertEpochToDate = (epochMiliSecond: number, offset: number) => {
+  const convertedEpoch = epochMiliSecond + offset * 60 * 60 * 1000;
+  return new Date(convertedEpoch);
 };
