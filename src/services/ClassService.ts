@@ -17,6 +17,41 @@ export class ClassService {
     this.userModel = new User();
   }
 
+  async getClassById(id: string) {
+    const class_ = await this.classModel.getClassById(id);
+
+    if (!class_) {
+      return createErrorObject(
+        404,
+        "class's not found",
+        ERRORCODE.COMMON_NOT_FOUND
+      );
+    }
+
+    return class_;
+  }
+
+  async getStudentsOfClasses(userId: string, classId: string) {
+    const class_ = await this.classModel.getClassById(classId);
+
+    if (!class_) {
+      return createErrorObject(
+        404,
+        "class's not found",
+        ERRORCODE.COMMON_NOT_FOUND
+      );
+    }
+    if (!class_.user.find((u) => u.id === userId)) {
+      return createErrorObject(
+        400,
+        "this class's not for you",
+        ERRORCODE.BAD_REQUEST_ERROR
+      );
+    }
+
+    return class_;
+  }
+
   private async checkUserRole(userId: string, role: ROLE) {
     const user = await this.userModel.getUserById(userId);
 
@@ -69,8 +104,12 @@ export class ClassService {
     return this.classModel.updateClassById(id, payload);
   }
 
-  async getClasses(page: number = 1, subjectId: string | undefined) {
-    return this.classModel.getAllClasses(page, subjectId);
+  async getClasses(
+    page: number = 1,
+    subjectId: string | undefined,
+    userId?: string | undefined
+  ) {
+    return this.classModel.getAllClasses(page, subjectId, userId);
   }
 
   async addNewClass(payload: IPostClass) {

@@ -24,6 +24,9 @@ model User {
   StudentWaitingList StudentWaitingList[]
   Announcement       Announcement[]
   TaskSubmission     TaskSubmission[]
+  Answer             Answer[]
+  Feedback           Feedback[]
+  History            History[]
 
   @@map("users")
 }
@@ -54,6 +57,8 @@ model Class {
   StudentWaitingList StudentWaitingList[]
   Task               Task[]
   Announcement       Announcement[]
+  Quiz               Quiz[]
+  History            History[]
 
   @@map("classes")
 }
@@ -97,6 +102,7 @@ model TaskSubmission {
   student        User?        @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   studentId      String?      @db.VarChar(100)
   taskId         String?      @db.VarChar(100)
+  feedback       String?      @db.Text
 
   @@unique([taskId, studentId])
   @@map("task_submissions")
@@ -115,6 +121,70 @@ model Announcement {
   authorId    String?      @db.VarChar(100)
 
   @@map("announcements")
+}
+
+model Quiz {
+  id          String     @id @db.VarChar(100)
+  name        String?    @db.VarChar(255)
+  type        QuizType
+  description String?    @db.Text
+  startDate   BigInt     @db.UnsignedBigInt
+  endDate     BigInt     @db.UnsignedBigInt
+  duration    Int        @db.UnsignedInt
+  class       Class?     @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @default(now()) @updatedAt
+  problems    Problem[]
+  classId     String?    @db.VarChar(100)
+  Feedback    Feedback[]
+
+  @@map("quizzes")
+}
+
+model Problem {
+  id          String   @id @db.VarChar(100)
+  number      Int      @db.UnsignedTinyInt
+  description String   @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+  optionA     String?  @db.Text
+  optionB     String?  @db.Text
+  optionC     String?  @db.Text
+  optionD     String?  @db.Text
+  optionE     String?  @db.Text
+  quiz        Quiz?    @relation(fields: [quizId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  quizId      String?  @db.VarChar(100)
+  Answer      Answer[]
+
+  @@unique([number, quizId])
+  @@map("problems")
+}
+
+model Answer {
+  id        String                @id @db.VarChar(100)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @default(now()) @updatedAt
+  choice    MultipleChoiceAnswer? @default(UNSELECTED)
+  solution  String?               @default("") @db.Text
+  problem   Problem?              @relation(fields: [problemId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  problemId String?               @db.VarChar(100)
+  student   User?                 @relation(fields: [studentId], references: [id])
+  studentId String?               @db.VarChar(100)
+
+  @@unique([problemId, studentId])
+  @@map("answers")
+}
+
+model Feedback {
+  id          String  @id @db.VarChar(100)
+  quiz        Quiz?   @relation(fields: [quizId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  quizId      String? @db.VarChar(100)
+  student     User?   @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  studentId   String? @db.VarChar(100)
+  description String? @db.Text
+
+  @@unique([quizId, studentId])
+  @@map("feedbacks")
 }
 
 model Attachment {
@@ -157,6 +227,10 @@ model History {
   historyType HistoryType
   description String?     @db.Text
   uri         String?     @db.VarChar(100)
+  class       Class?      @relation(fields: [classId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  classId     String?     @db.VarChar(100)
+  lecturer    User?       @relation(fields: [lecturerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  lecturerId  String?     @db.VarChar(100)
 
   @@map("histories")
 }
@@ -189,4 +263,18 @@ enum AcceptanceStatus {
   PENDING
   ACCEPTED
   REJECTED
+}
+
+enum QuizType {
+  MULTIPLE_CHOICE
+  PHOTO_ANSWER
+}
+
+enum MultipleChoiceAnswer {
+  A
+  B
+  C
+  D
+  E
+  UNSELECTED
 }

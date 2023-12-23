@@ -12,6 +12,8 @@ import {
   createResponse,
   throwResultError,
   throwValidationError,
+  getTokenPayload,
+  ROLE,
 } from "../../utils";
 import {
   IUserListUserClassDTO,
@@ -34,18 +36,24 @@ import {
 import { Validator } from "../../validator/Validator";
 import { StudentWaitingListService } from "../../services/StudentWaitingListService";
 import { IListStudentWaitingListDTO } from "../../utils/dto/StudentWaitingListDTO";
-import { IListClassScheduleDTO } from "../../utils/dto/ClassDTO";
+import {
+  IClassStudentsDTO,
+  IListClassScheduleDTO,
+} from "../../utils/dto/ClassDTO";
+import { ClassService } from "../../services/ClassService";
 
 export class UserHandler {
   private userService: UserService;
   private validator: Validator;
   private authenticationService: AuthenticationService;
   private studentWaitingListService: StudentWaitingListService;
+  private classService: ClassService;
 
   constructor() {
     this.userService = new UserService();
     this.authenticationService = new AuthenticationService();
     this.studentWaitingListService = new StudentWaitingListService();
+    this.classService = new ClassService();
     this.validator = new Validator();
 
     this.getUserProfile = this.getUserProfile.bind(this);
@@ -65,6 +73,52 @@ export class UserHandler {
       this.getLecturerStudentsWaitingLists.bind(this);
     this.getUserClasses = this.getUserClasses.bind(this);
     this.getTodayClassSchedules = this.getTodayClassSchedules.bind(this);
+    this.getLecturerStudentsClass = this.getLecturerStudentsClass.bind(this);
+    this.updateUserById = this.updateUserById.bind(this);
+  }
+
+  async getLecturerStudentsClass(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    const tokenPayload: ITokenPayload = getTokenPayload(res);
+    const { id } = req.params;
+
+    try {
+      const students = await this.classService.getStudentsOfClasses(
+        tokenPayload.userId,
+        id
+      );
+
+      if (students && "error" in students) {
+        switch (students.error) {
+          case 400:
+            throw new BadRequestError(students.errorCode, students.message);
+          case 404:
+            throw new NotFoundError(students.errorCode, students.message);
+          default:
+            throw new InternalServerError(students.errorCode);
+        }
+      }
+
+      return res.status(200).json(
+        createResponse(RESPONSE_MESSAGE.SUCCESS, {
+          classId: students.id,
+          className: students.name,
+          students: students.user
+            .filter((u) => u.role === ROLE.STUDENT)
+            .map((s) => {
+              return {
+                name: s.fullname,
+                studentId: s.id,
+              };
+            }),
+        } as IClassStudentsDTO)
+      );
+    } catch (error) {
+      return next(error);
+    }
   }
 
   async getTodayClassSchedules(
@@ -72,7 +126,7 @@ export class UserHandler {
     res: Response,
     next: NextFunction
   ) {
-    const tokenPayload: ITokenPayload = res.locals.user;
+    const tokenPayload: ITokenPayload = getTokenPayload(res);
 
     const todaySchedules = await this.userService.getSchedulesByDay(
       tokenPayload.userId,
@@ -96,7 +150,7 @@ export class UserHandler {
   }
 
   async getUserClasses(req: Request, res: Response, next: NextFunction) {
-    const tokenPayload: ITokenPayload = res.locals.user;
+    const tokenPayload: ITokenPayload = getTokenPayload(res);
     const { page } = req.query;
 
     const userClasses = await this.userService.getUserClasses(
@@ -125,7 +179,7 @@ export class UserHandler {
   ) {
     const { id } = req.params;
     const { status, page } = req.query;
-    const tokenPayload: ITokenPayload = res.locals.user;
+    const tokenPayload: ITokenPayload = getTokenPayload(res);
 
     const result =
       await this.studentWaitingListService.getStudentWaitingListOfLecturer(
@@ -156,7 +210,7 @@ export class UserHandler {
     res: Response,
     next: NextFunction
   ) {
-    const tokenPayload: ITokenPayload = res.locals.user;
+    const tokenPayload: ITokenPayload = getTokenPayload(res);
     const payload: IPutClassUser = req.body;
 
     try {
@@ -187,28 +241,33 @@ export class UserHandler {
 
   async getUserById(req: Request, res: Response, next: NextFunction) {
     const { id } = req.params;
-    const user = await this.userService.getUserById(id);
-
-    if (user && "error" in user) {
-      switch (user.error) {
-        case 400:
-          throw new BadRequestError(user.errorCode, user.message);
-        case 404:
-          throw new NotFoundError(user.errorCode, user.message);
-        default:
-          throw new InternalServerError(user.errorCode);
+    
+    try {
+      
+      const user = await this.userService.getUserById(id);
+      if (user && "error" in user) {
+        switch (user.error) {
+          case 400:
+            throw new BadRequestError(user.errorCode, user.message);
+          case 404:
+            throw new NotFoundError(user.errorCode, user.message);
+          default:
+            throw new InternalServerError(user.errorCode);
+        }
       }
+  
+      return res.status(200).json(
+        createResponse(RESPONSE_MESSAGE.SUCCESS, {
+          fullname: user.fullname,
+          role: user.role,
+          userId: user.id,
+          username: user.username,
+          email: user.email,
+        } as IUserProfileDTO)
+      );
+    } catch (error) {
+      return next(error);
     }
-
-    return res.status(200).json(
-      createResponse(RESPONSE_MESSAGE.SUCCESS, {
-        fullname: user.fullname,
-        role: user.role,
-        userId: user.id,
-        username: user.username,
-        email: user.email,
-      } as IUserProfileDTO)
-    );
   }
 
   async updateUserById(req: Request, res: Response, next: NextFunction) {
@@ -286,7 +345,7 @@ export class UserHandler {
 
   async deleteUserProfilePic(req: Request, res: Response, next: NextFunction) {
     try {
-      const tokenPayload: ITokenPayload = res.locals.user;
+      const tokenPayload: ITokenPayload = getTokenPayload(res);
 
       await this.userService.updateUserProfile(tokenPayload.username, {
         pic: "",
@@ -304,7 +363,7 @@ export class UserHandler {
 
   async getUserProfilePic(req: Request, res: Response, next: NextFunction) {
     try {
-      const tokenPayload: ITokenPayload = res.locals.user;
+      const tokenPayload: ITokenPayload = getTokenPayload(res);
       const fileToSend = await this.userService.getUserProfilePicture(
         tokenPayload.username
       );
@@ -326,7 +385,7 @@ export class UserHandler {
   }
 
   async postProfilePicture(req: Request, res: Response, next: NextFunction) {
-    const tokenPayload: ITokenPayload = res.locals.user;
+    const tokenPayload: ITokenPayload = getTokenPayload(res);
 
     try {
       if (!req.file?.buffer) {
@@ -357,7 +416,7 @@ export class UserHandler {
   async postUserLogin(req: Request, res: Response, next: NextFunction) {
     try {
       const token = await this.authenticationService.generateToken(
-        res.locals.user
+        getTokenPayload(res)
       );
 
       return res
@@ -369,7 +428,7 @@ export class UserHandler {
   }
 
   async deleteUserAccount(req: Request, res: Response, next: NextFunction) {
-    const tokenPayload: ITokenPayload = res.locals.user;
+    const tokenPayload: ITokenPayload = getTokenPayload(res);
 
     try {
       const result = await this.userService.deleteUserByUsername(
@@ -412,7 +471,7 @@ export class UserHandler {
   }
 
   async putUserProfile(req: Request, res: Response, next: NextFunction) {
-    const tokenPayload: ITokenPayload = res.locals.user;
+    const tokenPayload: ITokenPayload = getTokenPayload(res);
     const payload: IPutUserProfile = req.body;
 
     try {
@@ -443,7 +502,7 @@ export class UserHandler {
   }
 
   async getUserProfile(req: Request, res: Response, next: NextFunction) {
-    const tokenPayload: ITokenPayload = res.locals.user;
+    const tokenPayload: ITokenPayload = getTokenPayload(res);
     const user = await this.userService.getUserByUsername(
       tokenPayload.username
     );

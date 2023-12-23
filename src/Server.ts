@@ -9,6 +9,8 @@ import { StudentWaitingListRouter } from "./api/waiting-lists/StudentWaitingList
 import { ReferenceRouter } from "./api/references/ReferenceRouter";
 import { AnnouncementRouter } from "./api/announcements/AnnouncementRouter";
 import { TaskRouter } from "./api/tasks/TaskRouter";
+import { QuizRouter } from "./api/quizzes/QuizRouter";
+import { TestRouter } from "./api/test/TestRouter";
 
 dotenv.config();
 
@@ -42,6 +44,8 @@ class Server {
     this.app.use("/api", new ReferenceRouter().register());
     this.app.use("/api", new AnnouncementRouter().register());
     this.app.use("/api", new TaskRouter().register());
+    this.app.use("/api", new QuizRouter().register());
+    this.app.use("/api", new TestRouter().register());
     // * error handling
     this.app.use(ErrorHandler);
   }

@@ -20,6 +20,7 @@ export class UserRouter {
     // * credential
     // * update user profile
     // * post a new user
+    // * self delete
     this.router
       .route(this.path)
       .get(
@@ -134,6 +135,14 @@ export class UserRouter {
       .get(
         AuthorizationBearer.authorize([ROLE.LECTURER]),
         this.userHandler.getLecturerStudentsWaitingLists
+      );
+
+    // * class lecturers viewing students
+    this.router
+      .route(this.path + "/classes/:id/students")
+      .get(
+        AuthorizationBearer.authorize([ROLE.LECTURER]),
+        this.userHandler.getLecturerStudentsClass
       );
 
     // * user view schedule based on current request time
